@@ -3,18 +3,48 @@ const File = require('../models/File');
 
 exports.getUserFiles = async (req, res) => {
     try {
-        const { userId } = req.query;
+        const { userId, search, fileType, sortBy, order } = req.query;
 
         if (!userId) {
             return res.status(400).json({ success: false, message: "חובה לספק userId בשאילתה" });
         }
 
-        const files = await File.find({ userId });
-        
-        res.status(200).json({ 
-            success: true, 
+        const query = { userId };
+
+        if (search) {
+            query.fileName = { $regex: search, $options: 'i' };
+        }
+
+        if (fileType) {
+            query.fileType = fileType;
+        }
+
+        const allowedSortFields = ['fileName', 'fileSizeKB', 'createdAt'];
+        const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        const sortOrder = order === 'asc' ? 1 : -1;
+
+        const files = await File.find(query).sort({ [sortField]: sortOrder });
+
+        res.status(200).json({
+            success: true,
             count: files.length,
-            files: files
+            files
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.getFilesWithOwner = async (req, res) => {
+    try {
+        const files = await File.find()
+            .populate('userId', 'username email')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            success: true,
+            count: files.length,
+            files
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
