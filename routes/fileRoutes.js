@@ -4,6 +4,8 @@ const fileController = require('../controllers/fileController');
 
 router.get('/', fileController.getUserFiles);
 
+router.get('/storage-summary', fileController.getStorageSummary);
+
 router.post('/upload', fileController.uploadFile);
 
 router.patch('/:id/rename', fileController.renameFile);
