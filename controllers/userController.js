@@ -3,11 +3,11 @@ const bcrypt = require('bcrypt');
 
 const registerUser = async (req, res) => {
     try {
-        const { username, email, password } = req.body;
+        const { username, password } = req.body;
 
-        const userExists = await User.findOne({ email });
+        const userExists = await User.findOne({ username });
         if (userExists) {
-            return res.status(400).json({ success: false, message: 'This email address is already registered in the system' });
+            return res.status(400).json({ success: false, message: 'This username is already taken' });
         }
 
         const salt = await bcrypt.genSalt(10);
@@ -15,7 +15,6 @@ const registerUser = async (req, res) => {
 
         const newUser = new User({
             username,
-            email,
             password: hashedPassword
         });
 
@@ -26,8 +25,7 @@ const registerUser = async (req, res) => {
             message: 'User registered successfully!',
             user: {
                 id: newUser._id,
-                username: newUser.username,
-                email: newUser.email
+                username: newUser.username
             }
         });
 
@@ -38,9 +36,9 @@ const registerUser = async (req, res) => {
 
 const loginUser = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { username, password } = req.body;
 
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ username });
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found or incorrect details' });
         }
@@ -55,8 +53,7 @@ const loginUser = async (req, res) => {
             message: 'Successfully logged into mycloud!',
             user: {
                 id: user._id,
-                username: user.username,
-                email: user.email
+                username: user.username
             }
         });
 
@@ -80,15 +77,15 @@ const getAllUsers = async (req, res) => {
 const updateUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { username, email } = req.body;
+        const { username } = req.body;
 
-        if (!username || !email) {
-            return res.status(400).json({ success: false, message: 'Name and email are required' });
+        if (!username) {
+            return res.status(400).json({ success: false, message: 'Username is required' });
         }
 
         const updatedUser = await User.findByIdAndUpdate(
             id,
-            { username, email },
+            { username },
             { new: true, runValidators: true }
         ).select('-password');
 

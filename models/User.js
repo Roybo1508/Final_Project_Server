@@ -7,13 +7,6 @@ const userSchema = new mongoose.Schema({
         unique: true,
         trim: true
     },
-    email: {
-        type: String,
-        required: [true, 'חובה להזין אימייל'],
-        unique: true,
-        lowercase: true,
-        match: [/.+\@.+\..+/, 'אנא הזן כתובת אימייל תקינה']
-    },
     password: {
         type: String,
         required: [true, 'חובה להזין סיסמה'],
