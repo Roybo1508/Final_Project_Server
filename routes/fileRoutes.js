@@ -8,6 +8,8 @@ router.get('/admin/all', fileController.getFilesWithOwner);
 
 router.get('/storage-summary', fileController.getStorageSummary);
 
+router.get('/:id/download', fileController.downloadFile);
+
 router.post('/upload', fileController.uploadFile);
 
 router.patch('/:id/rename', fileController.renameFile);

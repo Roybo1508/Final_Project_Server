@@ -1,9 +1,20 @@
 const mongoose = require('mongoose');
 const File = require('../models/File');
 
+const TOTAL_QUOTA_KB = 102400;
+const MAX_FILE_SIZE_KB = 2048;
+
+async function getUsedStorageKB(userId) {
+    const result = await File.aggregate([
+        { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+        { $group: { _id: null, totalUsedKB: { $sum: '$fileSizeKB' } } }
+    ]);
+    return result.length > 0 ? result[0].totalUsedKB : 0;
+}
+
 exports.getUserFiles = async (req, res) => {
     try {
-        const { userId, search, fileType, sortBy, order } = req.query;
+        const { userId, search, fileType, sortBy, order, includeData } = req.query;
 
         if (!userId) {
             return res.status(400).json({ success: false, message: "חובה לספק userId בשאילתה" });
@@ -23,7 +34,8 @@ exports.getUserFiles = async (req, res) => {
         const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
         const sortOrder = order === 'asc' ? 1 : -1;
 
-        const files = await File.find(query).sort({ [sortField]: sortOrder });
+        const projection = includeData === 'true' ? {} : { fileData: 0 };
+        const files = await File.find(query, projection).sort({ [sortField]: sortOrder });
 
         res.status(200).json({
             success: true,
@@ -37,7 +49,7 @@ exports.getUserFiles = async (req, res) => {
 
 exports.getFilesWithOwner = async (req, res) => {
     try {
-        const files = await File.find()
+        const files = await File.find({}, { fileData: 0 })
             .populate('userId', 'username email')
             .sort({ createdAt: -1 });
 
@@ -51,24 +63,66 @@ exports.getFilesWithOwner = async (req, res) => {
     }
 };
 
+exports.downloadFile = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const file = await File.findById(id);
+
+        if (!file) {
+            return res.status(404).json({ success: false, message: "הקובץ לא נמצא" });
+        }
+
+        res.status(200).json({
+            success: true,
+            fileName: file.fileName,
+            fileType: file.fileType,
+            fileData: file.fileData
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 exports.uploadFile = async (req, res) => {
     try {
-        const { userId, fileName, fileType, fileSizeKB, fileUrl } = req.body;
+        const { userId, fileName, fileType, fileSizeKB, fileData } = req.body;
+
+        if (fileSizeKB > MAX_FILE_SIZE_KB) {
+            return res.status(400).json({
+                success: false,
+                message: `הקובץ גדול מדי. הגודל המרבי לקובץ הוא ${MAX_FILE_SIZE_KB / 1024} MB`
+            });
+        }
+
+        const usedKB = await getUsedStorageKB(userId);
+        if (usedKB + fileSizeKB > TOTAL_QUOTA_KB) {
+            return res.status(400).json({
+                success: false,
+                message: "אין מספיק מקום אחסון פנוי בענן שלכם"
+            });
+        }
 
         const newFile = new File({
             userId,
             fileName,
             fileType,
             fileSizeKB,
-            fileUrl
+            fileData
         });
 
         await newFile.save();
 
-        res.status(201).json({ 
-            success: true, 
+        res.status(201).json({
+            success: true,
             message: "הקובץ הועלה ונשמר בהצלחה בענן שלכם!",
-            file: newFile
+            file: {
+                _id: newFile._id,
+                userId: newFile.userId,
+                fileName: newFile.fileName,
+                fileType: newFile.fileType,
+                fileSizeKB: newFile.fileSizeKB,
+                createdAt: newFile.createdAt
+            }
         });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });
@@ -110,7 +164,6 @@ exports.deleteFile = async (req, res) => {
     }
 };
 
-const TOTAL_QUOTA_KB = 102400;
 exports.getStorageSummary = async (req, res) => {
     try {
         const { userId } = req.query;
@@ -118,12 +171,7 @@ exports.getStorageSummary = async (req, res) => {
             return res.status(400).json({ success: false, message: "חובה לספק userId בשאילתה" });
         }
 
-        const aggregationResult = await File.aggregate([
-            { $match: { userId: new mongoose.Types.ObjectId(userId) } },
-            { $group: { _id: null, totalUsedKB: { $sum: '$fileSizeKB' } } }
-        ]);
-
-        const totalUsedKB = aggregationResult.length > 0 ? aggregationResult[0].totalUsedKB : 0;
+        const totalUsedKB = await getUsedStorageKB(userId);
         const remainingKB = Math.max(0, TOTAL_QUOTA_KB - totalUsedKB);
         res.status(200).json({
             success: true,

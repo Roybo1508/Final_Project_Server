@@ -20,10 +20,10 @@ const fileSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    fileUrl: {
+    fileData: {
         type: String,
-        required: true 
+        required: [true, 'חובה לספק את תוכן הקובץ']
     }
-}, { timestamps: true }); 
+}, { timestamps: true });
 
 module.exports = mongoose.model('File', fileSchema);
