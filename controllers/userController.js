@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 
 const registerUser = async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { username, password, role } = req.body;
 
         const userExists = await User.findOne({ username });
         if (userExists) {
@@ -15,7 +15,8 @@ const registerUser = async (req, res) => {
 
         const newUser = new User({
             username,
-            password: hashedPassword
+            password: hashedPassword,
+            ...(role && { role })
         });
 
         await newUser.save();
@@ -25,7 +26,8 @@ const registerUser = async (req, res) => {
             message: 'User registered successfully!',
             user: {
                 id: newUser._id,
-                username: newUser.username
+                username: newUser.username,
+                role: newUser.role
             }
         });
 
@@ -53,7 +55,8 @@ const loginUser = async (req, res) => {
             message: 'Successfully logged into mycloud!',
             user: {
                 id: user._id,
-                username: user.username
+                username: user.username,
+                role: user.role
             }
         });
 
@@ -77,15 +80,18 @@ const getAllUsers = async (req, res) => {
 const updateUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { username } = req.body;
+        const { username, role } = req.body;
 
         if (!username) {
             return res.status(400).json({ success: false, message: 'Username is required' });
         }
 
+        const updateFields = { username };
+        if (role) updateFields.role = role;
+
         const updatedUser = await User.findByIdAndUpdate(
             id,
-            { username },
+            updateFields,
             { new: true, runValidators: true }
         ).select('-password');
 
