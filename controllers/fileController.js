@@ -234,7 +234,7 @@ exports.shareFileViaEmail = async (req, res) => {
 
         await shareLink.save();
 
-        const shareUrl = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/share/${token}`;
+        const shareUrl = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/api/files/share/${token}`;
 
         try {
             const resend = getResendClient();
