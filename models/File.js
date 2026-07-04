@@ -6,6 +6,11 @@ const fileSchema = new mongoose.Schema({
         ref: 'User',
         required: [true, 'חובה לספק מזהה משתמש userId']
     },
+    folderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Folder',
+        default: null
+    },
     fileName: {
         type: String,
         required: [true, 'חובה להזין את שם הקובץ'],

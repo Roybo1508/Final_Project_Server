@@ -26,6 +26,9 @@ mongoose.connect(process.env.MONGO_URI)
 const fileRoutes = require('./routes/fileRoutes');
 app.use('/api/files', fileRoutes);
 
+const folderRoutes = require('./routes/folderRoutes');
+app.use('/api/folders', folderRoutes);
+
 const userRoutes = require('./routes/userRoutes.js');
 app.use('/api/users', userRoutes);
 

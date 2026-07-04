@@ -16,6 +16,8 @@ router.get('/:id/download', fileController.downloadFile);
 
 router.post('/:id/share', fileController.shareFileViaEmail);
 
+router.post('/:fileId/move', fileController.moveFileToFolder);
+
 router.patch('/:id/rename', fileController.renameFile);
 
 router.delete('/:id', fileController.deleteFile);

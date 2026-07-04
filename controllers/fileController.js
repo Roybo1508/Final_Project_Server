@@ -22,13 +22,20 @@ async function getUsedStorageKB(userId) {
 
 exports.getUserFiles = async (req, res) => {
     try {
-        const { userId, search, fileType, sortBy, order, includeData } = req.query;
+        const { userId, search, fileType, sortBy, order, includeData, folderId } = req.query;
 
         if (!userId) {
             return res.status(400).json({ success: false, message: "חובה לספק userId בשאילתה" });
         }
 
         const query = { userId };
+
+        // If folderId is provided, filter by it; otherwise get root-level files (folderId: null)
+        if (folderId && folderId !== 'null') {
+            query.folderId = folderId;
+        } else {
+            query.folderId = null;
+        }
 
         if (search) {
             query.fileName = { $regex: search, $options: 'i' };
@@ -93,7 +100,7 @@ exports.downloadFile = async (req, res) => {
 
 exports.uploadFile = async (req, res) => {
     try {
-        const { userId, fileName, fileType, fileSizeKB, fileData } = req.body;
+        const { userId, fileName, fileType, fileSizeKB, fileData, folderId } = req.body;
 
         if (fileSizeKB > MAX_FILE_SIZE_KB) {
             return res.status(400).json({
@@ -110,12 +117,25 @@ exports.uploadFile = async (req, res) => {
             });
         }
 
+        // Validate folder if provided
+        if (folderId && folderId !== 'null') {
+            const Folder = require('../models/Folder');
+            const folder = await Folder.findById(folderId);
+            if (!folder || folder.userId.toString() !== userId) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Folder not found or unauthorized"
+                });
+            }
+        }
+
         const newFile = new File({
             userId,
             fileName,
             fileType,
             fileSizeKB,
-            fileData
+            fileData,
+            folderId: (folderId && folderId !== 'null') ? folderId : null
         });
 
         await newFile.save();
@@ -335,6 +355,46 @@ exports.downloadFileByToken = async (req, res) => {
         res.setHeader('Content-Length', buffer.length);
 
         res.status(200).send(buffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.moveFileToFolder = async (req, res) => {
+    try {
+        const { fileId } = req.params;
+        const { userId, folderId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ success: false, message: "userId is required" });
+        }
+
+        const file = await File.findById(fileId);
+
+        if (!file || file.userId.toString() !== userId) {
+            return res.status(404).json({ success: false, message: "File not found or unauthorized" });
+        }
+
+        // Validate target folder if provided (not null/undefined)
+        if (folderId && folderId !== 'null') {
+            const Folder = require('../models/Folder');
+            const targetFolder = await Folder.findById(folderId);
+            if (!targetFolder || targetFolder.userId.toString() !== userId) {
+                return res.status(403).json({ success: false, message: "Target folder not found or unauthorized" });
+            }
+            file.folderId = folderId;
+        } else {
+            // Move to root
+            file.folderId = null;
+        }
+
+        await file.save();
+
+        res.status(200).json({
+            success: true,
+            message: "File moved successfully",
+            file: file
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
