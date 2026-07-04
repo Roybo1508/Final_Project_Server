@@ -8,9 +8,13 @@ router.get('/admin/all', fileController.getFilesWithOwner);
 
 router.get('/storage-summary', fileController.getStorageSummary);
 
+router.post('/upload', fileController.uploadFile);
+
+router.get('/share/:token', fileController.downloadFileByToken);
+
 router.get('/:id/download', fileController.downloadFile);
 
-router.post('/upload', fileController.uploadFile);
+router.post('/:id/share', fileController.shareFileViaEmail);
 
 router.patch('/:id/rename', fileController.renameFile);
 

@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+const bcrypt = require('bcrypt');
+const { Resend } = require('resend');
 const File = require('../models/File');
+const ShareLink = require('../models/ShareLink');
+
+function getResendClient() {
+    return new Resend(process.env.RESEND_API_KEY);
+}
 
 const TOTAL_QUOTA_KB = 102400;
 const MAX_FILE_SIZE_KB = 2048;
@@ -178,6 +186,146 @@ exports.getStorageSummary = async (req, res) => {
             totalUsedKB,
             remainingKB,
             totalQuotaKB: TOTAL_QUOTA_KB
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.shareFileViaEmail = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { recipientEmail, password, expirationDays, senderName } = req.body;
+
+        if (!recipientEmail) {
+            return res.status(400).json({ success: false, message: "Email recipient is required" });
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(recipientEmail)) {
+            return res.status(400).json({ success: false, message: "Invalid email format" });
+        }
+
+        const file = await File.findById(id);
+        if (!file) {
+            return res.status(404).json({ success: false, message: "File not found" });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+
+        let hashedPassword = null;
+        if (password) {
+            hashedPassword = await bcrypt.hash(password, 10);
+        }
+
+        let expirationDate = null;
+        if (expirationDays) {
+            expirationDate = new Date();
+            expirationDate.setDate(expirationDate.getDate() + parseInt(expirationDays));
+        }
+
+        const shareLink = new ShareLink({
+            fileId: id,
+            token,
+            recipientEmail,
+            password: hashedPassword,
+            expirationDate
+        });
+
+        await shareLink.save();
+
+        const shareUrl = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/share/${token}`;
+
+        try {
+            const resend = getResendClient();
+            const emailResponse = await resend.emails.send({
+                from: process.env.RESEND_FROM_EMAIL || 'MyCloud <onboarding@resend.dev>',
+                to: recipientEmail,
+                subject: `${senderName || 'Someone'} shared "${file.fileName}" with you via MyCloud`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                        <h2 style="color: #333;">📁 ${senderName || 'Someone'} shared a file with you</h2>
+                        <p style="color: #666;">A file has been shared with you via MyCloud.</p>
+                        <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                            <p style="margin: 5px 0;"><strong>File:</strong> ${file.fileName}</p>
+                            <p style="margin: 5px 0;"><strong>Size:</strong> ${(file.fileSizeKB / 1024).toFixed(2)} MB</p>
+                            ${expirationDate ? `<p style="margin: 5px 0;"><strong>Expires:</strong> ${expirationDate.toLocaleDateString()}</p>` : ''}
+                            ${password ? '<p style="margin: 5px 0;"><strong>🔒 Password Protected</strong></p>' : ''}
+                        </div>
+                        <p style="margin-top: 30px;">
+                            <a href="${shareUrl}" style="background-color: #3b7ef4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                                Download File
+                            </a>
+                        </p>
+                        <p style="margin-top: 40px; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px;">
+                            This is an automated message from MyCloud. Do not reply to this email.
+                        </p>
+                    </div>
+                `
+            });
+
+            if (!emailResponse.data?.id) {
+                console.error('Resend error:', emailResponse.error);
+                return res.status(500).json({
+                    success: false,
+                    message: "File share created but email failed to send. Share link: " + shareUrl
+                });
+            }
+        } catch (emailError) {
+            console.error('Email service error:', emailError.message);
+            return res.status(500).json({
+                success: false,
+                message: "File share created but email failed to send. Share link: " + shareUrl
+            });
+        }
+
+        res.status(201).json({
+            success: true,
+            message: `File shared successfully! Email sent to ${recipientEmail}`,
+            shareToken: token,
+            shareUrl
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.downloadFileByToken = async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body || {};
+
+        const shareLink = await ShareLink.findOne({ token });
+
+        if (!shareLink) {
+            return res.status(404).json({ success: false, message: "Share link not found or expired" });
+        }
+
+        if (shareLink.expirationDate && new Date() > shareLink.expirationDate) {
+            return res.status(404).json({ success: false, message: "Share link has expired" });
+        }
+
+        if (shareLink.password) {
+            if (!password) {
+                return res.status(401).json({ success: false, message: "Password required", requiresPassword: true });
+            }
+
+            const passwordMatch = await bcrypt.compare(password, shareLink.password);
+            if (!passwordMatch) {
+                return res.status(401).json({ success: false, message: "Incorrect password" });
+            }
+        }
+
+        const file = await File.findById(shareLink.fileId);
+        if (!file) {
+            return res.status(404).json({ success: false, message: "File no longer exists" });
+        }
+
+        res.status(200).json({
+            success: true,
+            fileName: file.fileName,
+            fileType: file.fileType,
+            fileData: file.fileData
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
