@@ -322,12 +322,16 @@ exports.downloadFileByToken = async (req, res) => {
             return res.status(404).json({ success: false, message: "File no longer exists" });
         }
 
-        res.status(200).json({
-            success: true,
-            fileName: file.fileName,
-            fileType: file.fileType,
-            fileData: file.fileData
-        });
+        // Convert base64 to buffer for download
+        const base64Data = file.fileData.replace(/^data:[^;]+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        // Set download headers
+        res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Length', buffer.length);
+
+        res.status(200).send(buffer);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
