@@ -1,13 +1,10 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
-const { Resend } = require('resend');
 const File = require('../models/File');
 const ShareLink = require('../models/ShareLink');
 
-function getResendClient() {
-    return new Resend(process.env.RESEND_API_KEY);
-}
+const RESEND_API_URL = 'https://api.resend.com/emails';
 
 const TOTAL_QUOTA_KB = 102400;
 const MAX_FILE_SIZE_KB = 2048;
@@ -258,35 +255,44 @@ exports.shareFileViaEmail = async (req, res) => {
         const shareUrl = `${baseUrl}/api/files/share/${token}`;
 
         try {
-            const resend = getResendClient();
-            const emailResponse = await resend.emails.send({
-                from: process.env.RESEND_FROM_EMAIL || 'MyCloud <onboarding@resend.dev>',
-                to: recipientEmail,
-                subject: `${senderName || 'Someone'} shared "${file.fileName}" with you via MyCloud`,
-                html: `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <h2 style="color: #333;">📁 ${senderName || 'Someone'} shared a file with you</h2>
-                        <p style="color: #666;">A file has been shared with you via MyCloud.</p>
-                        <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                            <p style="margin: 5px 0;"><strong>File:</strong> ${file.fileName}</p>
-                            <p style="margin: 5px 0;"><strong>Size:</strong> ${(file.fileSizeKB / 1024).toFixed(2)} MB</p>
-                            ${expirationDate ? `<p style="margin: 5px 0;"><strong>Expires:</strong> ${expirationDate.toLocaleDateString()}</p>` : ''}
-                            ${password ? '<p style="margin: 5px 0;"><strong>🔒 Password Protected</strong></p>' : ''}
+            // Call the Resend public email API directly via fetch (REST integration).
+            const emailResponse = await fetch(RESEND_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    from: process.env.RESEND_FROM_EMAIL || 'MyCloud <onboarding@resend.dev>',
+                    to: recipientEmail,
+                    subject: `${senderName || 'Someone'} shared "${file.fileName}" with you via MyCloud`,
+                    html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                            <h2 style="color: #333;">📁 ${senderName || 'Someone'} shared a file with you</h2>
+                            <p style="color: #666;">A file has been shared with you via MyCloud.</p>
+                            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                                <p style="margin: 5px 0;"><strong>File:</strong> ${file.fileName}</p>
+                                <p style="margin: 5px 0;"><strong>Size:</strong> ${(file.fileSizeKB / 1024).toFixed(2)} MB</p>
+                                ${expirationDate ? `<p style="margin: 5px 0;"><strong>Expires:</strong> ${expirationDate.toLocaleDateString()}</p>` : ''}
+                                ${password ? '<p style="margin: 5px 0;"><strong>🔒 Password Protected</strong></p>' : ''}
+                            </div>
+                            <p style="margin-top: 30px;">
+                                <a href="${shareUrl}" style="background-color: #3b7ef4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                                    Download File
+                                </a>
+                            </p>
+                            <p style="margin-top: 40px; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px;">
+                                This is an automated message from MyCloud. Do not reply to this email.
+                            </p>
                         </div>
-                        <p style="margin-top: 30px;">
-                            <a href="${shareUrl}" style="background-color: #3b7ef4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
-                                Download File
-                            </a>
-                        </p>
-                        <p style="margin-top: 40px; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px;">
-                            This is an automated message from MyCloud. Do not reply to this email.
-                        </p>
-                    </div>
-                `
+                    `
+                })
             });
 
-            if (!emailResponse.data?.id) {
-                console.error('Resend error:', emailResponse.error);
+            const emailResult = await emailResponse.json();
+
+            if (!emailResponse.ok || !emailResult.id) {
+                console.error('Resend error:', emailResult);
                 return res.status(500).json({
                     success: false,
                     message: "File share created but email failed to send. Share link: " + shareUrl
