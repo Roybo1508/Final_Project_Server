@@ -326,8 +326,11 @@ exports.downloadFileByToken = async (req, res) => {
         const base64Data = file.fileData.replace(/^data:[^;]+;base64,/, '');
         const buffer = Buffer.from(base64Data, 'base64');
 
+        // Sanitize filename for header (remove special characters)
+        const safeFileName = file.fileName.replace(/[^\w\s.-]/g, '_');
+
         // Set download headers
-        res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Length', buffer.length);
 
